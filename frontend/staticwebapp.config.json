@@ -1,0 +1,36 @@
+{
+  "routes": [
+    { "route": "/api/rates", "methods": ["POST", "DELETE"], "allowedRoles": ["admin"] },
+    { "route": "/api/*", "allowedRoles": ["authenticated"] },
+    { "route": "/*", "allowedRoles": ["authenticated"] }
+  ],
+  "responseOverrides": {
+    "401": { "redirect": "/.auth/login/okta", "statusCode": 302 }
+  },
+  "auth": {
+    "rolesSource": "/api/getRoles",
+    "identityProviders": {
+      "customOpenIdConnectProviders": {
+        "okta": {
+          "registration": {
+            "clientIdSettingName": "OKTA_CLIENT_ID",
+            "clientCredential": {
+              "clientSecretSettingName": "OKTA_CLIENT_SECRET"
+            },
+            "openIdConnectConfiguration": {
+              "wellKnownOpenIdConfiguration": "https://REPLACE-WITH-OKTA-DOMAIN.okta.com/.well-known/openid-configuration"
+            }
+          },
+          "login": {
+            "nameClaimType": "email",
+            "scopes": ["openid", "profile", "email", "groups"]
+          }
+        }
+      }
+    }
+  },
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/api/*", "*.{css,js,ico,png,svg}"]
+  }
+}

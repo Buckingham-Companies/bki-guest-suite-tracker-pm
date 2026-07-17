@@ -1,0 +1,33 @@
+# Secrets — never commit
+.env
+.env.*
+*.env
+secrets/
+credentials/
+keys/
+*.pem
+*.key
+*.p12
+*.pfx
+local.settings.json
+
+# Dependencies / build artifacts
+node_modules/
+__pycache__/
+.venv/
+bin/
+obj/
+
+# Logs / temp
+*.log
+*.tmp
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local dev database (sqlite file created by local-dev/mock_server.py)
+local-dev/*.db
+
+# Azure Functions local
+.azurefunctions/
