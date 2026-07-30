@@ -10,8 +10,12 @@
 
 <header class="app-hdr">
   <div class="app-hdr-left">
-    <span class="app-title">Guest Suite Tracker</span>
-    <select id="propertySelect"></select>
+    <span class="brand-mark" aria-hidden="true">GS</span>
+    <div class="app-title-block">
+      <span class="app-title">Guest Suite Tracker</span>
+      <span class="app-subtitle">Buckingham Property Operations</span>
+    </div>
+    <select id="propertySelect" class="property-select"></select>
   </div>
   <div class="app-hdr-right">
     <span id="whoami" class="whoami"></span>
@@ -34,13 +38,27 @@
     </div>
 
     <div class="toolbar admin-only" id="rateToolbar">
-      <label>Set rate</label>
-      <select id="rUnit"></select>
-      <label>From</label><input type="date" id="rFrom"/>
-      <label>To</label><input type="date" id="rTo"/>
-      <label>$/night</label><input type="number" id="rRate" placeholder="e.g. 150" min="0" step="1"/>
-      <button class="tbtn" id="applyRateBtn">Apply</button>
-      <button class="tbtn outline" id="clearRatesBtn">Clear rates</button>
+      <div class="toolbar-heading">Set nightly rate</div>
+      <div class="field">
+        <label for="rUnit">Unit</label>
+        <select id="rUnit"></select>
+      </div>
+      <div class="field">
+        <label for="rFrom">From</label>
+        <input type="date" id="rFrom"/>
+      </div>
+      <div class="field">
+        <label for="rTo">To</label>
+        <input type="date" id="rTo"/>
+      </div>
+      <div class="field field-rate">
+        <label for="rRate">$ / night</label>
+        <input type="number" id="rRate" placeholder="150" min="0" step="1"/>
+      </div>
+      <div class="toolbar-actions">
+        <button class="tbtn" id="applyRateBtn">Apply</button>
+        <button class="tbtn outline" id="clearRatesBtn">Clear</button>
+      </div>
     </div>
 
     <div class="month-grid" id="monthGrid"></div>
