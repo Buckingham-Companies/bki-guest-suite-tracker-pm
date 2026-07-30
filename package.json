@@ -1,0 +1,17 @@
+{
+  "name": "guest-suites-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Guest Suite Tracker API (Azure Functions v4, JavaScript, no build step)",
+  "main": "src/functions/*.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0",
+    "mssql": "^11.0.1"
+  }
+}

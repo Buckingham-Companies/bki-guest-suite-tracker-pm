@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Guest Suite Tracker</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+<header class="app-hdr">
+  <div class="app-hdr-left">
+    <span class="brand-mark" aria-hidden="true">GS</span>
+    <div class="app-title-block">
+      <span class="app-title">Guest Suite Tracker</span>
+      <span class="app-subtitle">Buckingham Property Operations</span>
+    </div>
+    <select id="propertySelect" class="property-select"></select>
+  </div>
+  <div class="app-hdr-right">
+    <span id="whoami" class="whoami"></span>
+    <a href="/.auth/logout" class="signout-link">Sign out</a>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="calendar">Calendar</button>
+  <button class="tab-btn" data-tab="reports">Reports</button>
+</nav>
+
+<main class="wrap">
+
+  <section id="tab-calendar" class="tab-panel">
+
+    <div class="top-bar">
+      <span class="cal-title" id="calTitle">Rental Calendar</span>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="toolbar admin-only" id="rateToolbar">
+      <div class="toolbar-heading">Set nightly rate</div>
+      <div class="field">
+        <label for="rUnit">Unit</label>
+        <select id="rUnit"></select>
+      </div>
+      <div class="field">
+        <label for="rFrom">From</label>
+        <input type="date" id="rFrom"/>
+      </div>
+      <div class="field">
+        <label for="rTo">To</label>
+        <input type="date" id="rTo"/>
+      </div>
+      <div class="field field-rate">
+        <label for="rRate">$ / night</label>
+        <input type="number" id="rRate" placeholder="150" min="0" step="1"/>
+      </div>
+      <div class="toolbar-actions">
+        <button class="tbtn" id="applyRateBtn">Apply</button>
+        <button class="tbtn outline" id="clearRatesBtn">Clear</button>
+      </div>
+    </div>
+
+    <div class="month-grid" id="monthGrid"></div>
+  </section>
+
+  <section id="tab-reports" class="tab-panel" style="display:none">
+    <div class="reports-grid">
+      <div class="report-card">
+        <div class="report-hdr">Occupancy by unit / month</div>
+        <table class="report-table" id="occupancyTable"></table>
+      </div>
+      <div class="report-card">
+        <div class="report-hdr">Revenue by unit / month</div>
+        <table class="report-table" id="revenueTable"></table>
+      </div>
+      <div class="report-card report-card-wide">
+        <div class="report-hdr">Upcoming check-ins / check-outs (next 14 days)</div>
+        <table class="report-table" id="upcomingTable"></table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-hdr" id="mHdr">Add booking</div>
+    <div class="modal-sub" id="mSub"></div>
+
+    <div class="section-hdr">Booking</div>
+    <div class="frow">
+      <label class="flabel">Unit</label>
+      <select id="mUnit"></select>
+    </div>
+    <div class="frow-2">
+      <div><label class="flabel">Check-in</label><input type="date" id="mIn"/></div>
+      <div><label class="flabel">Check-out</label><input type="date" id="mOut"/></div>
+    </div>
+    <div class="frow">
+      <label class="flabel">Total price ($)</label>
+      <input type="number" id="mPrice" placeholder="e.g. 850" min="0" step="1"/>
+      <div class="preset-hint" id="priceHint"></div>
+    </div>
+
+    <div class="section-hdr">Guest Information</div>
+    <div class="frow-2">
+      <div><label class="flabel">First name</label><input type="text" id="mFirst" placeholder="Jane"/></div>
+      <div><label class="flabel">Last name</label><input type="text" id="mLast" placeholder="Smith"/></div>
+    </div>
+    <div class="frow">
+      <label class="flabel">Email</label>
+      <input type="email" id="mEmail" placeholder="jane@email.com"/>
+    </div>
+    <div class="frow">
+      <label class="flabel">Phone number</label>
+      <input type="tel" id="mPhone" placeholder="(555) 000-0000"/>
+    </div>
+    <div class="frow-2">
+      <div>
+        <label class="flabel">Birth month</label>
+        <select id="mBirthMonth">
+          <option value="">-- Month --</option>
+          <option>January</option><option>February</option><option>March</option>
+          <option>April</option><option>May</option><option>June</option>
+          <option>July</option><option>August</option><option>September</option>
+          <option>October</option><option>November</option><option>December</option>
+        </select>
+      </div>
+      <div>
+        <label class="flabel">Birth year</label>
+        <input type="number" id="mBirthYear" placeholder="e.g. 1985" min="1900" max="2010"/>
+      </div>
+    </div>
+
+    <div class="section-hdr history-section" id="historySection" style="display:none">
+      History
+    </div>
+    <div id="historyList" class="history-list"></div>
+
+    <div class="mactions">
+      <button class="btn-c" id="mCancel">Cancel</button>
+      <button class="btn-d" id="mDel" style="display:none">Delete</button>
+      <button class="btn-s" id="mSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
