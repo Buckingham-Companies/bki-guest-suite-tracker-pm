@@ -23,7 +23,7 @@
           },
           "login": {
             "nameClaimType": "email",
-            "scopes": ["openid", "profile", "email"]
+            "scopes": ["openid", "profile", "email", "groups"]
           }
         }
       }
