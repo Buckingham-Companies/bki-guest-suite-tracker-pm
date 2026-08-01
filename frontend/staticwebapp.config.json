@@ -4,6 +4,9 @@
     { "route": "/api/*", "allowedRoles": ["authenticated"] },
     { "route": "/*", "allowedRoles": ["authenticated"] }
   ],
+  "responseOverrides": {
+    "401": { "redirect": "/.auth/login/okta", "statusCode": 302 }
+  },
   "auth": {
     "rolesSource": "/api/getRoles",
     "identityProviders": {
@@ -20,7 +23,7 @@
           },
           "login": {
             "nameClaimType": "email",
-            "scopes": ["openid", "profile", "email", "groups"]
+            "scopes": ["openid", "profile", "email"]
           }
         }
       }
