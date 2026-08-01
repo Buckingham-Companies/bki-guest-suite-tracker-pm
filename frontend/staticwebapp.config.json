@@ -1,13 +1,9 @@
 {
   "routes": [
-    { "route": "/.auth/*", "allowedRoles": ["anonymous"] },
     { "route": "/api/rates", "methods": ["POST", "DELETE"], "allowedRoles": ["admin"] },
     { "route": "/api/*", "allowedRoles": ["authenticated"] },
     { "route": "/*", "allowedRoles": ["authenticated"] }
   ],
-  "responseOverrides": {
-    "401": { "redirect": "/.auth/login/okta", "statusCode": 302 }
-  },
   "auth": {
     "rolesSource": "/api/getRoles",
     "identityProviders": {
