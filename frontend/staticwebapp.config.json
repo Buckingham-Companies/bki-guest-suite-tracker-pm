@@ -4,6 +4,9 @@
     { "route": "/api/*", "allowedRoles": ["authenticated"] },
     { "route": "/*", "allowedRoles": ["authenticated"] }
   ],
+  "responseOverrides": {
+    "401": { "redirect": "/.auth/login/okta", "statusCode": 302 }
+  },
   "auth": {
     "rolesSource": "/api/getRoles",
     "identityProviders": {
@@ -15,7 +18,7 @@
               "clientSecretSettingName": "OKTA_CLIENT_SECRET"
             },
             "openIdConnectConfiguration": {
-              "wellKnownOpenIdConfiguration": "https://REPLACE-WITH-OKTA-DOMAIN.okta.com/.well-known/openid-configuration"
+              "wellKnownOpenIdConfiguration": "https://buckingham.okta.com/.well-known/openid-configuration"
             }
           },
           "login": {

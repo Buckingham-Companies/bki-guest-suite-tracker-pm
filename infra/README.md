@@ -73,10 +73,4 @@ No code change. Insert a row into `Properties` and a few rows into `Units` (copy
 pattern in `database/seed_beverly.sql`). It'll show up in the property selector and
 get its own calendar automatically.
 
-## Out of scope for this build (documented, not forgotten)
 
-Shane raised using this as a general amenity-booking replacement for the paid CityWay
-tool (dynamic per-property permissions, other amenity types beyond guest suites). That's
-a real idea worth a follow-up scoping conversation with Innovation, but per his own
-comment on the call, it shouldn't hold up getting Beverly live — this build is
-deliberately scoped to guest suites only.

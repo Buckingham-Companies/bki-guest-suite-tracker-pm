@@ -41,8 +41,8 @@ SELECT
     YEAR(n.NightDate)  AS Yr,
     MONTH(n.NightDate) AS Mo,
     COUNT(*)            AS NightsBooked,
-    DAY(EOMONTH(n.NightDate)) AS DaysInMonth,
-    CAST(COUNT(*) AS DECIMAL(5,2)) / DAY(EOMONTH(n.NightDate)) * 100 AS OccupancyPct
+    MAX(DAY(EOMONTH(n.NightDate))) AS DaysInMonth,
+    CAST(COUNT(*) AS DECIMAL(5,2)) / MAX(DAY(EOMONTH(n.NightDate))) * 100 AS OccupancyPct
 FROM vw_BookingNights n
 JOIN Units u ON u.UnitId = n.UnitId
 GROUP BY u.PropertyId, n.UnitId, YEAR(n.NightDate), MONTH(n.NightDate);
