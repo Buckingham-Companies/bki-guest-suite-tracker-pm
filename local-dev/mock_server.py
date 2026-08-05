@@ -234,6 +234,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/bookings":
             return self.handle_bookings_create()
+        if path == "/api/rates/bulk":
+            return self.handle_rates_bulk_set()
         if path == "/api/rates":
             return self.handle_rates_set()
         self.send_response(404); self.end_headers()
@@ -408,6 +410,48 @@ class Handler(BaseHTTPRequestHandler):
                              new_values={"unitId": unit_id, "date": ds, "rate": rate})
         conn.commit(); conn.close()
         self.send_no_content()
+
+    def handle_rates_bulk_set(self):
+        user = self.current_user()
+        if not user["isAdmin"]:
+            return self.send_json(403, {"error": "Only Guest Suites admins can do this."})
+        body = self.read_json_body()
+        rows = body.get("rates") or []
+        if not rows:
+            return self.send_json(400, {"error": '"rates" must be a non-empty array of {unitId, date, rate}.'})
+        if len(rows) > 5000:
+            return self.send_json(400, {"error": "Too many rows in one import (max 5000) — split into smaller files."})
+
+        conn = get_conn()
+        # Fetched once up front so an unknown unitId is a normal per-row error
+        # instead of a foreign-key IntegrityError that would otherwise kill the
+        # whole request (SQLite raises on the INSERT since PRAGMA foreign_keys
+        # is on — same real-world failure mode the real API guards against).
+        valid_unit_ids = {r["UnitId"] for r in conn.execute("SELECT UnitId FROM Units").fetchall()}
+        imported = 0
+        errors = []
+        for i, row in enumerate(rows):
+            unit_id, ds, rate = row.get("unitId"), row.get("date"), row.get("rate")
+            row_num = i + 2
+            if not unit_id or not ds or not re.match(r"^\d{4}-\d{2}-\d{2}$", str(ds)) or rate is None or rate < 0:
+                errors.append({"row": row_num, "reason": "Missing or invalid unit/date/rate."})
+                continue
+            if unit_id not in valid_unit_ids:
+                errors.append({"row": row_num, "reason": f"Unit {unit_id} does not exist."})
+                continue
+            existing = conn.execute("SELECT * FROM Rates WHERE UnitId=? AND RateDate=?", (unit_id, ds)).fetchone()
+            conn.execute("""
+                INSERT INTO Rates (UnitId, RateDate, NightlyRate, CreatedBy, CreatedAt) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(UnitId, RateDate) DO UPDATE SET NightlyRate=excluded.NightlyRate,
+                    CreatedBy=excluded.CreatedBy, CreatedAt=excluded.CreatedAt
+            """, (unit_id, ds, rate, user["email"], now_iso()))
+            after = conn.execute("SELECT * FROM Rates WHERE UnitId=? AND RateDate=?", (unit_id, ds)).fetchone()
+            record_audit(conn, "Rate", after["RateId"], "Update" if existing else "Insert", user["email"],
+                         old_values={"rate": existing["NightlyRate"]} if existing else None,
+                         new_values={"unitId": unit_id, "date": ds, "rate": rate, "source": "csv-import"})
+            imported += 1
+        conn.commit(); conn.close()
+        self.send_json(200, {"imported": imported, "errors": errors})
 
     def handle_rates_clear(self):
         user = self.current_user()

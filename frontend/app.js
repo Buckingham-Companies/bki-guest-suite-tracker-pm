@@ -359,6 +359,128 @@ async function clearRates() {
     }
 }
 
+// -- CSV rate import/export -------------------------------------------------
+// Template columns are deliberately "Unit,Date,Rate" (one row per unit per
+// night) rather than a from/to range — the whole point is to match Katie's
+// seasonal pricing spreadsheet, where the rate can be different every single
+// day, not a flat number across a range.
+
+function parseCsvText(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // Excel prepends a UTF-8 BOM to saved CSVs
+    const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
+    if (lines.length === 0) return { headers: [], rows: [] };
+    const splitLine = (line) => {
+        const cells = [];
+        let cur = '', inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (inQuotes) {
+                if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+                else if (c === '"') { inQuotes = false; }
+                else { cur += c; }
+            } else if (c === '"') { inQuotes = true; }
+            else if (c === ',') { cells.push(cur); cur = ''; }
+            else { cur += c; }
+        }
+        cells.push(cur);
+        return cells.map(c => c.trim());
+    };
+    const headers = splitLine(lines[0]).map(h => h.toLowerCase());
+    return { headers, rows: lines.slice(1).map(splitLine) };
+}
+
+function downloadRateTemplate() {
+    const property = currentProperty();
+    const unitVal = document.getElementById('rUnit').value;
+    const from = document.getElementById('rFrom').value;
+    const to = document.getElementById('rTo').value;
+    if (!from || !to || from > to) { alert('Pick a valid From/To range above first.'); return; }
+
+    const units = unitVal === 'ALL' ? property.units : property.units.filter(u => u.unitId === Number(unitVal));
+    const lines = ['Unit,Date,Rate'];
+    const start = parseDateKey(from), end = parseDateKey(to);
+    units.forEach(unit => {
+        const cur = new Date(start);
+        while (cur <= end) {
+            const ds = dk(cur.getFullYear(), cur.getMonth(), cur.getDate());
+            const existing = getRate(unit.unitId, ds);
+            lines.push(`${unit.unitLabel},${ds},${existing || ''}`);
+            cur.setDate(cur.getDate() + 1);
+        }
+    });
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${property.shortCode || property.name}-rates-${from}-to-${to}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+async function importRateCsv() {
+    const fileInput = document.getElementById('csvFile');
+    const file = fileInput.files[0];
+    if (!file) { alert('Choose a CSV file first.'); return; }
+
+    const text = await file.text();
+    const { headers, rows } = parseCsvText(text);
+    const unitIdx = headers.indexOf('unit');
+    const dateIdx = headers.indexOf('date');
+    const rateIdx = headers.indexOf('rate');
+    if (unitIdx === -1 || dateIdx === -1 || rateIdx === -1) {
+        alert('CSV must have Unit, Date, and Rate columns — download the template above to get the right format.');
+        return;
+    }
+
+    const property = currentProperty();
+    const labelToId = {};
+    property.units.forEach(u => { labelToId[String(u.unitLabel).trim()] = u.unitId; });
+
+    const validRows = [];
+    const clientErrors = [];
+    rows.forEach((cells, i) => {
+        const rowNum = i + 2; // +1 for 0-index, +1 for the header row
+        const unitLabel = (cells[unitIdx] || '').trim();
+        const dateStr = (cells[dateIdx] || '').trim();
+        const rateRaw = (cells[rateIdx] || '').trim();
+        if (!unitLabel && !dateStr && !rateRaw) return; // fully blank row
+        if (!rateRaw) return; // blank rate = "leave this day alone", not an error
+
+        const unitId = labelToId[unitLabel];
+        if (!unitId) { clientErrors.push(`Row ${rowNum}: unknown unit "${unitLabel}"`); return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { clientErrors.push(`Row ${rowNum}: bad date "${dateStr}"`); return; }
+        const rate = parseFloat(rateRaw.replace(/[$,]/g, '')); // tolerate "$150" / "1,370"-style formatting
+        if (isNaN(rate) || rate < 0) { clientErrors.push(`Row ${rowNum}: bad rate "${rateRaw}"`); return; }
+        validRows.push({ unitId, date: dateStr, rate });
+    });
+
+    if (validRows.length === 0) {
+        alert(clientErrors.length
+            ? `No valid rows to import.\n\n${clientErrors.slice(0, 10).join('\n')}`
+            : 'No rows found in that file.');
+        return;
+    }
+
+    try {
+        const result = await api('/api/rates/bulk', { method: 'POST', body: JSON.stringify({ rates: validRows }) });
+        const allErrors = [...clientErrors, ...(result.errors || []).map(e => `Row ${e.row}: ${e.reason}`)];
+        let msg = `Imported ${result.imported} rate(s).`;
+        if (allErrors.length) {
+            msg += `\n\n${allErrors.length} row(s) skipped:\n${allErrors.slice(0, 10).join('\n')}`;
+            if (allErrors.length > 10) msg += `\n...and ${allErrors.length - 10} more.`;
+        }
+        alert(msg);
+        fileInput.value = '';
+        await loadPropertyData();
+        renderCalendar();
+    } catch (err) {
+        alert(`Import failed: ${err.message}`);
+    }
+}
+
 function monthLabel(month) { return MONTHS[month - 1].slice(0, 3); }
 
 async function renderReports() {
@@ -411,6 +533,8 @@ function wireStaticControls() {
     });
     document.getElementById('applyRateBtn').addEventListener('click', applyRate);
     document.getElementById('clearRatesBtn').addEventListener('click', clearRates);
+    document.getElementById('downloadTemplateBtn').addEventListener('click', downloadRateTemplate);
+    document.getElementById('importCsvBtn').addEventListener('click', importRateCsv);
     document.getElementById('mCancel').addEventListener('click', closeModal);
     document.getElementById('mSave').addEventListener('click', saveBooking);
     document.getElementById('mDel').addEventListener('click', deleteBooking);
