@@ -365,6 +365,22 @@ async function clearRates() {
 // seasonal pricing spreadsheet, where the rate can be different every single
 // day, not a flat number across a range.
 
+// Excel silently reformats a "Date" column into its own Date type the moment
+// it recognizes one, then re-serializes it in the system's short-date format
+// when the file is saved back to CSV — so a template downloaded with ISO
+// dates ("2026-08-05") often comes back as "8/5/2026" after a round trip
+// through Excel, even though nobody touched that column on purpose. Returns
+// an ISO "YYYY-MM-DD" string, or null if the value doesn't match either shape.
+function normalizeDateStr(raw) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const mdy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (mdy) {
+        const [, m, d, y] = mdy;
+        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return null;
+}
+
 function parseCsvText(text) {
     if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // Excel prepends a UTF-8 BOM to saved CSVs
     const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
@@ -469,16 +485,17 @@ async function importRateCsv() {
         // this skips pricing it rather than treating the column as an error.
         if (availableIdx !== -1 && (cells[availableIdx] || '').trim().toUpperCase() === 'FALSE') return;
 
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { clientErrors.push(`Row ${rowNum}: bad date "${dateStr}"`); return; }
+        const isoDate = normalizeDateStr(dateStr);
+        if (!isoDate) { clientErrors.push(`Row ${rowNum}: bad date "${dateStr}"`); return; }
         const rate = parseFloat(rateRaw.replace(/[$,]/g, '')); // tolerate "$150" / "1,370"-style formatting
         if (isNaN(rate) || rate < 0) { clientErrors.push(`Row ${rowNum}: bad rate "${rateRaw}"`); return; }
 
         if (impliedUnitIds) {
-            impliedUnitIds.forEach(unitId => validRows.push({ unitId, date: dateStr, rate }));
+            impliedUnitIds.forEach(unitId => validRows.push({ unitId, date: isoDate, rate }));
         } else {
             const unitId = labelToId[unitLabel];
             if (!unitId) { clientErrors.push(`Row ${rowNum}: unknown unit "${unitLabel}"`); return; }
-            validRows.push({ unitId, date: dateStr, rate });
+            validRows.push({ unitId, date: isoDate, rate });
         }
     });
 
