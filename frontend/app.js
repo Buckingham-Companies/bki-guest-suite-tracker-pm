@@ -427,11 +427,16 @@ async function importRateCsv() {
 
     const text = await file.text();
     const { headers, rows } = parseCsvText(text);
-    const unitIdx = headers.indexOf('unit');
     const dateIdx = headers.indexOf('date');
-    const rateIdx = headers.indexOf('rate');
-    if (unitIdx === -1 || dateIdx === -1 || rateIdx === -1) {
-        alert('CSV must have Unit, Date, and Rate columns — download the template above to get the right format.');
+    // Accepts either the simple downloaded template ("rate") or a richer
+    // research sheet like a seasonal pricing worksheet ("nightly_rate"), plus
+    // whatever extra columns that sheet has (day_of_week, rate_type, ...) —
+    // those are read but not stored; see the "available" handling below.
+    const rateIdx = headers.indexOf('rate') !== -1 ? headers.indexOf('rate') : headers.indexOf('nightly_rate');
+    const unitIdx = headers.indexOf('unit');
+    const availableIdx = headers.indexOf('available');
+    if (dateIdx === -1 || rateIdx === -1) {
+        alert('CSV must have at least a Date column and a Rate (or nightly_rate) column.');
         return;
     }
 
@@ -439,22 +444,42 @@ async function importRateCsv() {
     const labelToId = {};
     property.units.forEach(u => { labelToId[String(u.unitLabel).trim()] = u.unitId; });
 
+    // No Unit column means "same price for every unit" — apply to whichever
+    // unit(s) are picked in the toolbar above (including "All units"), the
+    // same selector the regular Apply button already uses.
+    let impliedUnitIds = null;
+    if (unitIdx === -1) {
+        const unitVal = document.getElementById('rUnit').value;
+        impliedUnitIds = unitVal === 'ALL' ? property.units.map(u => u.unitId) : [Number(unitVal)];
+    }
+
     const validRows = [];
     const clientErrors = [];
     rows.forEach((cells, i) => {
         const rowNum = i + 2; // +1 for 0-index, +1 for the header row
-        const unitLabel = (cells[unitIdx] || '').trim();
         const dateStr = (cells[dateIdx] || '').trim();
         const rateRaw = (cells[rateIdx] || '').trim();
-        if (!unitLabel && !dateStr && !rateRaw) return; // fully blank row
+        const unitLabel = unitIdx !== -1 ? (cells[unitIdx] || '').trim() : null;
+        if (!dateStr && !rateRaw && !unitLabel) return; // fully blank row
         if (!rateRaw) return; // blank rate = "leave this day alone", not an error
 
-        const unitId = labelToId[unitLabel];
-        if (!unitId) { clientErrors.push(`Row ${rowNum}: unknown unit "${unitLabel}"`); return; }
+        // A day explicitly marked unavailable (e.g. blocked for maintenance) —
+        // the app doesn't enforce blackout dates yet, but importing a price
+        // for a day meant to be off-limits would be actively misleading, so
+        // this skips pricing it rather than treating the column as an error.
+        if (availableIdx !== -1 && (cells[availableIdx] || '').trim().toUpperCase() === 'FALSE') return;
+
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { clientErrors.push(`Row ${rowNum}: bad date "${dateStr}"`); return; }
         const rate = parseFloat(rateRaw.replace(/[$,]/g, '')); // tolerate "$150" / "1,370"-style formatting
         if (isNaN(rate) || rate < 0) { clientErrors.push(`Row ${rowNum}: bad rate "${rateRaw}"`); return; }
-        validRows.push({ unitId, date: dateStr, rate });
+
+        if (impliedUnitIds) {
+            impliedUnitIds.forEach(unitId => validRows.push({ unitId, date: dateStr, rate }));
+        } else {
+            const unitId = labelToId[unitLabel];
+            if (!unitId) { clientErrors.push(`Row ${rowNum}: unknown unit "${unitLabel}"`); return; }
+            validRows.push({ unitId, date: dateStr, rate });
+        }
     });
 
     if (validRows.length === 0) {
