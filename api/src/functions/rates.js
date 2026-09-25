@@ -1,32 +1,44 @@
 const { app } = require('@azure/functions');
 const { sql, withTransaction, query } = require('../shared/db');
-const { requireUser, requireAdmin } = require('../shared/auth');
+const { requireUser, requireAdmin, requirePropertyAccess, requireUnitAccess } = require('../shared/auth');
 const { recordAudit } = require('../shared/audit');
 const { withErrorHandling } = require('../shared/httpHandler');
 
 // GET is open to any authenticated user — staff need to see rates to know what
-// a stay will cost, they just can't change them (requireAdmin below).
+// a stay will cost, they just can't change them (requireAdmin below). Still
+// scoped to the caller's own properties, same reasoning as bookingsList.
 app.http('ratesList', {
     methods: ['GET'],
     route: 'rates',
     authLevel: 'anonymous',
     handler: withErrorHandling(async (request, context) => {
-        requireUser(request);
+        const user = requireUser(request);
         const unitId = request.query.get('unitId');
         const propertyId = request.query.get('propertyId');
         const from = request.query.get('from');
         const to = request.query.get('to');
 
+        if (unitId) {
+            await requireUnitAccess(user, unitId);
+        } else if (propertyId) {
+            await requirePropertyAccess(user, propertyId);
+        } else if (user.yardiNumbers.length === 0) {
+            return { jsonBody: [] };
+        }
+
         const result = await query(`
             SELECT r.UnitId, r.RateDate, r.NightlyRate
             FROM Rates r
             JOIN Units u ON u.UnitId = r.UnitId
+            JOIN Properties p ON p.PropertyId = u.PropertyId
             WHERE (@unitId IS NULL OR r.UnitId = @unitId)
               AND (@propertyId IS NULL OR u.PropertyId = @propertyId)
+              AND (@unitId IS NOT NULL OR @propertyId IS NOT NULL
+                   OR p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ') || 'NULL'}))
               AND (@from IS NULL OR r.RateDate >= @from)
               AND (@to IS NULL OR r.RateDate <= @to)
             ORDER BY r.RateDate
-        `, { unitId, propertyId, from, to });
+        `, { unitId, propertyId, from, to, ...Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])) });
 
         return {
             jsonBody: result.recordset.map(r => ({
@@ -57,6 +69,10 @@ app.http('ratesSet', {
         if (from > to) {
             return { status: 400, jsonBody: { error: '"from" must not be after "to".' } };
         }
+        // requireAdmin only proves this user is Admin *somewhere* — a Regional
+        // Manager admin on 5 properties must not be able to set rates on a 6th
+        // just because their SWA role says "admin".
+        await Promise.all(unitIds.map(unitId => requireUnitAccess(user, unitId)));
 
         await withTransaction(async (req, tx) => {
             for (const unitId of unitIds) {
@@ -130,6 +146,11 @@ app.http('ratesBulkSet', {
         if (rows.length > 5000) {
             return { status: 400, jsonBody: { error: 'Too many rows in one import (max 5000) — split into smaller files.' } };
         }
+        // A row referencing a unit outside this admin's assigned properties is a
+        // security violation, not a data-quality issue like a bad date — fail
+        // the whole import loudly rather than silently skipping it as a "bad row".
+        const distinctUnitIds = [...new Set(rows.map(r => r.unitId).filter(Boolean))];
+        await Promise.all(distinctUnitIds.map(unitId => requireUnitAccess(user, unitId)));
 
         const errors = [];
         let imported = 0;
@@ -204,6 +225,7 @@ app.http('ratesClear', {
         if (!Array.isArray(unitIds) || unitIds.length === 0 || !from || !to) {
             return { status: 400, jsonBody: { error: 'unitIds (array), from and to are required.' } };
         }
+        await Promise.all(unitIds.map(unitId => requireUnitAccess(user, unitId)));
 
         await withTransaction(async (req, tx) => {
             for (const unitId of unitIds) {

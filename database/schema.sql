@@ -6,8 +6,26 @@ CREATE TABLE Properties (
     PropertyId      INT IDENTITY(1,1) PRIMARY KEY,
     Name            NVARCHAR(100)   NOT NULL,
     ShortCode       NVARCHAR(20)    NOT NULL UNIQUE,
+    YardiNumber     NVARCHAR(20)    NOT NULL UNIQUE,   -- Yardi "Prop #", e.g. '1271' — matched against the
+                                                        -- user.YardiNumber Okta claim to grant property access
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
+GO
+
+-- Adds YardiNumber to a Properties table created before this column existed
+-- (i.e. the already-deployed Beverly-only database). Nullable/non-unique until
+-- backfilled by seed_beverly.sql, since a bare ALTER can't populate real values.
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Properties')
+   AND NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Properties') AND name = 'YardiNumber')
+ALTER TABLE Properties ADD YardiNumber NVARCHAR(20) NULL;
+GO
+
+-- Enforces one property per Yardi code once the migrated column above exists.
+-- Filtered on non-null so it's safe to run before seeding backfills real
+-- values into the pre-existing Beverly row.
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Properties') AND name = 'YardiNumber')
+   AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('Properties') AND name = 'UQ_Properties_YardiNumber')
+CREATE UNIQUE INDEX UQ_Properties_YardiNumber ON Properties (YardiNumber) WHERE YardiNumber IS NOT NULL;
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Units')

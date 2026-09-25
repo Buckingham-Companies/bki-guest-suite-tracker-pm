@@ -1,6 +1,6 @@
 const { app } = require('@azure/functions');
 const { query } = require('../shared/db');
-const { requireUser } = require('../shared/auth');
+const { requireUser, requirePropertyAccess } = require('../shared/auth');
 const { withErrorHandling } = require('../shared/httpHandler');
 
 // Reads vw_OccupancyByUnitMonth / vw_RevenueByUnitMonth (database/views.sql) —
@@ -12,18 +12,26 @@ app.http('reportsOccupancy', {
     route: 'reports/occupancy',
     authLevel: 'anonymous',
     handler: withErrorHandling(async (request, context) => {
-        requireUser(request);
+        const user = requireUser(request);
         const propertyId = request.query.get('propertyId');
         const year = request.query.get('year');
+
+        if (propertyId) {
+            await requirePropertyAccess(user, propertyId);
+        } else if (user.yardiNumbers.length === 0) {
+            return { jsonBody: [] };
+        }
 
         const result = await query(`
             SELECT u.UnitLabel, o.UnitId, o.Yr, o.Mo, o.NightsBooked, o.DaysInMonth, o.OccupancyPct
             FROM vw_OccupancyByUnitMonth o
             JOIN Units u ON u.UnitId = o.UnitId
+            JOIN Properties p ON p.PropertyId = o.PropertyId
             WHERE (@propertyId IS NULL OR o.PropertyId = @propertyId)
+              AND (@propertyId IS NOT NULL OR p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ') || 'NULL'}))
               AND (@year IS NULL OR o.Yr = @year)
             ORDER BY o.Yr, o.Mo, u.UnitLabel
-        `, { propertyId, year });
+        `, { propertyId, year, ...Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])) });
 
         return {
             jsonBody: result.recordset.map(r => ({
@@ -44,18 +52,26 @@ app.http('reportsRevenue', {
     route: 'reports/revenue',
     authLevel: 'anonymous',
     handler: withErrorHandling(async (request, context) => {
-        requireUser(request);
+        const user = requireUser(request);
         const propertyId = request.query.get('propertyId');
         const year = request.query.get('year');
+
+        if (propertyId) {
+            await requirePropertyAccess(user, propertyId);
+        } else if (user.yardiNumbers.length === 0) {
+            return { jsonBody: [] };
+        }
 
         const result = await query(`
             SELECT u.UnitLabel, r.UnitId, r.Yr, r.Mo, r.Revenue
             FROM vw_RevenueByUnitMonth r
             JOIN Units u ON u.UnitId = r.UnitId
+            JOIN Properties p ON p.PropertyId = r.PropertyId
             WHERE (@propertyId IS NULL OR r.PropertyId = @propertyId)
+              AND (@propertyId IS NOT NULL OR p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ') || 'NULL'}))
               AND (@year IS NULL OR r.Yr = @year)
             ORDER BY r.Yr, r.Mo, u.UnitLabel
-        `, { propertyId, year });
+        `, { propertyId, year, ...Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])) });
 
         return {
             jsonBody: result.recordset.map(r => ({
@@ -74,20 +90,28 @@ app.http('reportsUpcoming', {
     route: 'reports/upcoming',
     authLevel: 'anonymous',
     handler: withErrorHandling(async (request, context) => {
-        requireUser(request);
+        const user = requireUser(request);
         const propertyId = request.query.get('propertyId');
         const days = Number(request.query.get('days') || 14);
+
+        if (propertyId) {
+            await requirePropertyAccess(user, propertyId);
+        } else if (user.yardiNumbers.length === 0) {
+            return { jsonBody: [] };
+        }
 
         const result = await query(`
             SELECT b.BookingId, b.CheckIn, b.CheckOut, b.FirstName, b.LastName, u.UnitLabel
             FROM Bookings b
             JOIN Units u ON u.UnitId = b.UnitId
+            JOIN Properties p ON p.PropertyId = u.PropertyId
             WHERE b.IsDeleted = 0
               AND (@propertyId IS NULL OR u.PropertyId = @propertyId)
+              AND (@propertyId IS NOT NULL OR p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ') || 'NULL'}))
               AND (b.CheckIn BETWEEN CAST(GETUTCDATE() AS DATE) AND DATEADD(day, @days, CAST(GETUTCDATE() AS DATE))
                    OR b.CheckOut BETWEEN CAST(GETUTCDATE() AS DATE) AND DATEADD(day, @days, CAST(GETUTCDATE() AS DATE)))
             ORDER BY b.CheckIn
-        `, { propertyId, days });
+        `, { propertyId, days, ...Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])) });
 
         return {
             jsonBody: result.recordset.map(r => ({

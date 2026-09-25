@@ -1,6 +1,6 @@
 const { app } = require('@azure/functions');
 const { sql, withTransaction, query } = require('../shared/db');
-const { requireUser } = require('../shared/auth');
+const { requireUser, requirePropertyAccess, requireUnitAccess } = require('../shared/auth');
 const { recordAudit } = require('../shared/audit');
 const { withErrorHandling } = require('../shared/httpHandler');
 
@@ -45,21 +45,33 @@ app.http('bookingsList', {
     route: 'bookings',
     authLevel: 'anonymous',
     handler: withErrorHandling(async (request, context) => {
-        requireUser(request);
+        const user = requireUser(request);
         const propertyId = request.query.get('propertyId');
         const from = request.query.get('from');
         const to = request.query.get('to');
+
+        // Either scoped to one property the caller has confirmed access to, or
+        // (no propertyId) every property on their YardiNumber list — never
+        // "every property in the database" the way this used to work pre-
+        // multi-property, since that would leak other sites' guest PII.
+        if (propertyId) {
+            await requirePropertyAccess(user, propertyId);
+        } else if (user.yardiNumbers.length === 0) {
+            return { jsonBody: [] };
+        }
 
         const result = await query(`
             SELECT b.*
             FROM Bookings b
             JOIN Units u ON u.UnitId = b.UnitId
+            JOIN Properties p ON p.PropertyId = u.PropertyId
             WHERE b.IsDeleted = 0
               AND (@propertyId IS NULL OR u.PropertyId = @propertyId)
+              AND (@propertyId IS NOT NULL OR p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ') || 'NULL'}))
               AND (@from IS NULL OR b.CheckOut > @from)
               AND (@to IS NULL OR b.CheckIn < @to)
             ORDER BY b.CheckIn
-        `, { propertyId, from, to });
+        `, { propertyId, from, to, ...Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])) });
 
         return { jsonBody: result.recordset.map(toBookingRow) };
     })
@@ -79,6 +91,7 @@ app.http('bookingsCreate', {
         if (body.checkin >= body.checkout) {
             return { status: 400, jsonBody: { error: 'checkout must be after checkin.' } };
         }
+        await requireUnitAccess(user, body.unitId);
 
         const inserted = await withTransaction(async (req, tx) => {
             const autoPrice = await computeAutoPrice(req, body.unitId, body.checkin, body.checkout);
@@ -135,6 +148,7 @@ app.http('bookingsUpdate', {
         if (body.checkin >= body.checkout) {
             return { status: 400, jsonBody: { error: 'checkout must be after checkin.' } };
         }
+        await requireUnitAccess(user, body.unitId);
 
         const updated = await withTransaction(async (req, tx) => {
             const existingReq = new sql.Request(tx);
@@ -147,6 +161,11 @@ app.http('bookingsUpdate', {
                 throw err;
             }
             const before = existing.recordset[0];
+            // Also check the booking's current unit, not just the one it's being
+            // moved to — otherwise a guessed BookingId at another property could
+            // be edited as long as the new unitId happens to be one of this
+            // user's own.
+            await requireUnitAccess(user, before.UnitId);
 
             const autoPrice = await computeAutoPrice(req, body.unitId, body.checkin, body.checkout);
             const finalPrice = (user.isAdmin && body.totalPrice != null) ? body.totalPrice : autoPrice;
@@ -210,6 +229,7 @@ app.http('bookingsDelete', {
                 throw err;
             }
             const before = existing.recordset[0];
+            await requireUnitAccess(user, before.UnitId);
 
             const deleteReq = new sql.Request(tx);
             await deleteReq

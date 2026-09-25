@@ -3,23 +3,32 @@ const { query } = require('../shared/db');
 const { requireUser } = require('../shared/auth');
 const { withErrorHandling } = require('../shared/httpHandler');
 
-// Properties + their units, nested. The frontend builds its property selector
-// and unit dropdowns from this instead of hardcoding unit numbers — adding
-// Foundry (or any future property) later is a row in Properties/Units
-// (see database/seed_beverly.sql for the pattern), never a frontend change.
+// Properties + their units, nested, filtered down to the properties this user
+// is actually assigned to (via user.yardiNumbers — see shared/auth.js). The
+// frontend builds its property selector and unit dropdowns entirely from this
+// response, so a Property Manager only ever sees their own site, a Regional
+// or Multi-Site Manager sees every site in their YardiNumber list, and adding
+// a new property later is a row in Properties/Units (see
+// database/seed_portrait_midtown.sql for the pattern) — never a frontend
+// change or an Okta group-rule edit.
 app.http('propertiesList', {
     methods: ['GET'],
     route: 'properties',
     authLevel: 'anonymous',
     handler: withErrorHandling(async (request, context) => {
-        requireUser(request);
+        const user = requireUser(request);
+
+        if (user.yardiNumbers.length === 0) {
+            return { jsonBody: [] };
+        }
 
         const result = await query(`
             SELECT p.PropertyId, p.Name, p.ShortCode, u.UnitId, u.UnitLabel
             FROM Properties p
             JOIN Units u ON u.PropertyId = p.PropertyId AND u.IsActive = 1
+            WHERE p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ')})
             ORDER BY p.Name, u.UnitLabel
-        `);
+        `, Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])));
 
         const byProperty = new Map();
         for (const row of result.recordset) {
