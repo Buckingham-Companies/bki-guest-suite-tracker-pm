@@ -18,17 +18,26 @@ app.http('propertiesList', {
     handler: withErrorHandling(async (request, context) => {
         const user = requireUser(request);
 
-        if (user.yardiNumbers.length === 0) {
+        if (!user.isGlobalAdmin && user.yardiNumbers.length === 0) {
             return { jsonBody: [] };
         }
 
-        const result = await query(`
-            SELECT p.PropertyId, p.Name, p.ShortCode, u.UnitId, u.UnitLabel
-            FROM Properties p
-            JOIN Units u ON u.PropertyId = p.PropertyId AND u.IsActive = 1
-            WHERE p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ')})
-            ORDER BY p.Name, u.UnitLabel
-        `, Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])));
+        // Global admins (see getRoles.js) see every property regardless of
+        // their own YardiNumber claim.
+        const result = user.isGlobalAdmin
+            ? await query(`
+                SELECT p.PropertyId, p.Name, p.ShortCode, u.UnitId, u.UnitLabel
+                FROM Properties p
+                JOIN Units u ON u.PropertyId = p.PropertyId AND u.IsActive = 1
+                ORDER BY p.Name, u.UnitLabel
+            `)
+            : await query(`
+                SELECT p.PropertyId, p.Name, p.ShortCode, u.UnitId, u.UnitLabel
+                FROM Properties p
+                JOIN Units u ON u.PropertyId = p.PropertyId AND u.IsActive = 1
+                WHERE p.YardiNumber IN (${user.yardiNumbers.map((_, i) => `@yn${i}`).join(', ')})
+                ORDER BY p.Name, u.UnitLabel
+            `, Object.fromEntries(user.yardiNumbers.map((yn, i) => [`yn${i}`, yn])));
 
         const byProperty = new Map();
         for (const row of result.recordset) {

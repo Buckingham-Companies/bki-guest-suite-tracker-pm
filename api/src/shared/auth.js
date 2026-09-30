@@ -44,6 +44,9 @@ function getUser(request) {
     return {
         email: principal.userDetails,
         isAdmin: roles.includes('admin'),
+        // GuestSuites-GlobalAdmin (see getRoles.js) — bypasses the
+        // YardiNumber checks below and sees every property.
+        isGlobalAdmin: roles.includes('globalAdmin'),
         roles,
         // Yardi Prop #s this user is assigned to, from the user.YardiNumber
         // Okta claim. This — not the "admin" role — is what actually governs
@@ -82,6 +85,7 @@ function requireAdmin(request) {
 }
 
 async function requirePropertyAccess(user, propertyId) {
+    if (user.isGlobalAdmin) return;
     const result = await query('SELECT YardiNumber FROM Properties WHERE PropertyId = @propertyId', { propertyId });
     const property = result.recordset[0];
     if (!property || !user.yardiNumbers.includes(property.YardiNumber)) {
@@ -92,6 +96,7 @@ async function requirePropertyAccess(user, propertyId) {
 }
 
 async function requireUnitAccess(user, unitId) {
+    if (user.isGlobalAdmin) return;
     const result = await query(`
         SELECT p.YardiNumber
         FROM Units u JOIN Properties p ON p.PropertyId = u.PropertyId

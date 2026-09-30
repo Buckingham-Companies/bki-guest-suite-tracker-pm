@@ -16,6 +16,11 @@ const { app } = require('@azure/functions');
 // any role returned here.
 const ADMIN_GROUP = 'GuestSuites-Admin';
 
+// Manually assigned (Rebecca + Shane only) — not title-based. Gets 'admin'
+// for the SWA route gates plus 'globalAdmin', which shared/auth.js uses to
+// skip the per-property YardiNumber checks entirely.
+const GLOBAL_ADMIN_GROUP = 'GuestSuites-GlobalAdmin';
+
 app.http('getRoles', {
     methods: ['POST'],
     route: 'getRoles',
@@ -26,7 +31,9 @@ app.http('getRoles', {
         const groupsClaim = claims.find(c => c.typ === 'groups' || c.typ === 'okta_groups');
         const groups = groupsClaim ? (Array.isArray(groupsClaim.val) ? groupsClaim.val : [groupsClaim.val]) : [];
 
-        const roles = groups.includes(ADMIN_GROUP) ? ['admin'] : [];
+        const roles = [];
+        if (groups.includes(ADMIN_GROUP) || groups.includes(GLOBAL_ADMIN_GROUP)) roles.push('admin');
+        if (groups.includes(GLOBAL_ADMIN_GROUP)) roles.push('globalAdmin');
         return { jsonBody: { roles } };
     }
 });
