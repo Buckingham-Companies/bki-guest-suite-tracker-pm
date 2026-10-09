@@ -1,4 +1,5 @@
 const { app } = require('@azure/functions');
+const { parseYardiNumbers, YARDI_ROLE_PREFIX } = require('../shared/auth');
 
 // Azure Static Web Apps calls this after every Okta login (configured as
 // auth.rolesSource in staticwebapp.config.json) and merges whatever roles it
@@ -34,6 +35,10 @@ app.http('getRoles', {
         const roles = [];
         if (groups.includes(ADMIN_GROUP) || groups.includes(GLOBAL_ADMIN_GROUP)) roles.push('admin');
         if (groups.includes(GLOBAL_ADMIN_GROUP)) roles.push('globalAdmin');
+        // This is the only place the API ever sees the YardiNumber claim —
+        // SWA strips claims from the principal it forwards to other routes —
+        // so carry it through as roles for shared/auth.js getUser() to read.
+        for (const yn of new Set(parseYardiNumbers(claims))) roles.push(YARDI_ROLE_PREFIX + yn);
         return { jsonBody: { roles } };
     }
 });

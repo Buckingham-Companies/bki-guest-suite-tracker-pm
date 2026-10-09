@@ -153,6 +153,16 @@ caught).
 6. Okta **Group Rule conditions use a restricted expression grammar**: `&&`/`||`/`!`
    (not the word-based `and`/`or`/`not`), and the function is
    `String.stringContains(str1, str2)` (not `String.contains`).
+7. **API functions never see the `claims` array.** SWA's `x-ms-client-principal`
+   header carries `userRoles` but strips `claims` (only `/.auth/me` exposes them —
+   [MS docs](https://learn.microsoft.com/en-us/azure/static-web-apps/user-information#api-functions)).
+   Found 2026-10-07 when a Portrait Midtown PM saw no properties while the
+   global admins (who bypass the YardiNumber check) saw everything. Fix:
+   `getRoles` — the one place that *does* receive the raw claims — emits each
+   Yardi number as a `yardi_<n>` role, and `auth.js` reads them from `userRoles`.
+   Roles are only computed at login, so a YardiNumber change in Okta needs a
+   sign-out/sign-in to take effect. The local mock server injects claims into the
+   header, so it can't catch this class of bug.
 
 ## What Still Needs Testing
 - [ ] Full smoke test as a genuine `GuestSuites-Staff`-only user (not admin) —

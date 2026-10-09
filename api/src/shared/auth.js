@@ -7,12 +7,14 @@ const { query } = require('./db');
 // infra/README.md about locking the Function App down to that.
 const PRINCIPAL_HEADER = 'x-ms-client-principal';
 
-// principal.claims carries the same raw ID token claims that get POSTed to
-// /api/getRoles at login (see getRoles.js) — it's how per-property scoping
-// reaches every other route without a DB round trip just to read the user's
-// own assignment. Matched loosely (case-insensitive, tolerant of a URI-style
-// typ like ".../claims/YardiNumber") since IT controls the exact claim name
-// on the Okta app integration's Sign On tab, not this code.
+// Used by getRoles.js on the raw ID token claims SWA POSTs to it at login.
+// SWA does NOT forward the claims array to API functions in the
+// x-ms-client-principal header (only /.auth/me exposes it — see CLAUDE.md
+// quirk #7), so getRoles turns each Yardi number into a 'yardi_<n>' role, and
+// getUser() below reads them back out of userRoles. Matched loosely
+// (case-insensitive, tolerant of a URI-style typ like ".../claims/YardiNumber")
+// since IT controls the exact claim name on the Okta app integration's Sign On
+// tab, not this code.
 function findClaims(claims, name) {
     const needle = name.toLowerCase();
     const typ = claims.map(c => c.typ).find(t => t && (t.toLowerCase() === needle || t.toLowerCase().endsWith('/' + needle)));
@@ -33,6 +35,8 @@ function parseYardiNumbers(claims) {
         .filter(Boolean);
 }
 
+const YARDI_ROLE_PREFIX = 'yardi_';
+
 function getUser(request) {
     const header = request.headers.get(PRINCIPAL_HEADER);
     if (!header) {
@@ -49,10 +53,13 @@ function getUser(request) {
         isGlobalAdmin: roles.includes('globalAdmin'),
         roles,
         // Yardi Prop #s this user is assigned to, from the user.YardiNumber
-        // Okta claim. This — not the "admin" role — is what actually governs
-        // which properties they can see and act on; see requirePropertyAccess
-        // and requireUnitAccess below.
-        yardiNumbers: parseYardiNumbers(principal.claims || [])
+        // Okta claim (carried here as 'yardi_<n>' roles by getRoles.js). This —
+        // not the "admin" role — is what actually governs which properties
+        // they can see and act on; see requirePropertyAccess and
+        // requireUnitAccess below.
+        yardiNumbers: roles
+            .filter(r => r.startsWith(YARDI_ROLE_PREFIX))
+            .map(r => r.slice(YARDI_ROLE_PREFIX.length))
     };
 }
 
@@ -110,4 +117,4 @@ async function requireUnitAccess(user, unitId) {
     }
 }
 
-module.exports = { getUser, requireUser, requireAdmin, requirePropertyAccess, requireUnitAccess };
+module.exports = { getUser, requireUser, requireAdmin, requirePropertyAccess, requireUnitAccess, parseYardiNumbers, YARDI_ROLE_PREFIX };
